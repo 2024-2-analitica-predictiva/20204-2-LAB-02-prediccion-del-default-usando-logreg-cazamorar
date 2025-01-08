@@ -232,7 +232,8 @@ def convert_to_serializable(obj):
     else:
         raise TypeError(f"Type {type(obj)} not serializable")
 
-output_path = "files/output/metrics.json"
+#"files/output/metrics.json"
+output_path = "files\output\metrics.json" 
 os.makedirs(os.path.dirname(output_path), exist_ok=True)
 with open(output_path, "w") as f:
     for metric in metrics:
