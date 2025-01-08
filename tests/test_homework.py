@@ -99,9 +99,9 @@ def _test_scores(model, x_train, y_train, x_test, y_test):
 
 
 def _load_metrics():
-    assert os.path.exists("files\output\metrics.json")
+    assert os.path.exists("files\\output\\metrics.json") #files\output\metrics.json
     metrics = []
-    with open("files\output\metrics.json", "r", encoding="utf-8") as file:
+    with open("files\\output\\metrics.json", "r", encoding="utf-8") as file:
         for line in file:
             metrics.append(json.loads(line))
     return metrics
