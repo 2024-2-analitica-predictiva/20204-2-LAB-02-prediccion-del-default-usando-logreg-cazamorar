@@ -95,3 +95,155 @@
 # {'type': 'cm_matrix', 'dataset': 'train', 'true_0': {"predicted_0": 15562, "predicte_1": 666}, 'true_1': {"predicted_0": 3333, "predicted_1": 1444}}
 # {'type': 'cm_matrix', 'dataset': 'test', 'true_0': {"predicted_0": 15562, "predicte_1": 650}, 'true_1': {"predicted_0": 2490, "predicted_1": 1420}}
 #
+
+
+import os
+import gzip
+import json
+import pickle
+import numpy as np
+import pandas as pd
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder, MinMaxScaler
+from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import GridSearchCV, train_test_split
+from sklearn.metrics import (precision_score, balanced_accuracy_score, 
+                             recall_score, f1_score, confusion_matrix)
+from sklearn.feature_selection import mutual_info_classif
+
+# Paso 1: Cargar y limpiar los datasets
+train_path = "files/input/train_default_of_credit_card_clients.csv"
+test_path = "files/input/test_default_of_credit_card_clients.csv"
+
+# Cargar datasets
+train_df = pd.read_csv(train_path)
+test_df = pd.read_csv(test_path)
+
+# Renombrar columna objetivo y eliminar columna "ID"
+for df in [train_df, test_df]:
+    df.rename(columns={"default payment next month": "default"}, inplace=True)
+    df.drop(columns=["ID"], inplace=True)
+
+# Eliminar registros con información no disponible
+train_df.dropna(inplace=True)
+test_df.dropna(inplace=True)
+
+# Agrupar niveles superiores de EDUCATION en la categoría "others"
+for df in [train_df, test_df]:
+    df["EDUCATION"] = df["EDUCATION"].apply(lambda x: x if x <= 4 else 4)
+
+# Paso 2: Dividir los datasets en x e y
+x_train = train_df.drop(columns="default")
+y_train = train_df["default"]
+x_test = test_df.drop(columns="default")
+y_test = test_df["default"]
+
+# Paso 3: Crear pipeline de clasificación
+categorical_features = ["SEX", "EDUCATION", "MARRIAGE"]
+numeric_features = [col for col in x_train.columns if col not in categorical_features]
+
+preprocessor = ColumnTransformer(
+    transformers=[
+        ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_features),
+        ("num", MinMaxScaler(), numeric_features),
+    ]
+)
+
+pipeline = Pipeline([
+    ("preprocessor", preprocessor),
+    ("feature_selection", SelectKBest(score_func=mutual_info_classif)), #f_classif
+    ("classifier", LogisticRegression(max_iter=1000, random_state=42))
+])
+
+#C=20, penalty='l2', solver='liblinear', class_weight='balanced', max_iter=5000, random_state=42)
+
+# Paso 4: Optimizar hiperparámetros con GridSearchCV
+param_grid = {
+    "feature_selection__k": range(1, len(x_train.columns) + 1),
+    "classifier__C": [0.1, 1, 10],
+    "classifier__solver": ["liblinear", "lbfgs"]
+}
+
+grid_search = GridSearchCV(
+    pipeline, 
+    param_grid=param_grid, 
+    scoring="balanced_accuracy", 
+    cv=10, 
+    n_jobs=-1, 
+    verbose=1,
+    refit=True
+)
+
+grid_search.fit(x_train, y_train)
+
+# Paso 5: Guardar el modelo
+model_path = "files/models/model.pkl.gz"
+os.makedirs(os.path.dirname(model_path), exist_ok=True)
+with gzip.open(model_path, "wb") as f:
+    pickle.dump(grid_search, f)  # Guarda el objeto directamente
+
+# Paso 6: Calcular métricas de evaluación
+def calculate_metrics(model, x, y, dataset_name):
+    y_pred = model.predict(x)
+    return {
+        "type": "metrics",
+        "dataset": dataset_name,
+        "precision": precision_score(y, y_pred, zero_division=0),
+        "balanced_accuracy": balanced_accuracy_score(y, y_pred),
+        "recall": recall_score(y, y_pred, zero_division=0),
+        "f1_score": f1_score(y, y_pred, zero_division=0),
+    }
+
+def calculate_confusion_matrix(model, x, y, dataset_name):
+    y_pred = model.predict(x)
+    cm = confusion_matrix(y, y_pred)
+    return {
+        "type": "cm_matrix",
+        "dataset": dataset_name,
+        "true_0": {"predicted_0": cm[0, 0], "predicted_1": cm[0, 1]},
+        "true_1": {"predicted_0": cm[1, 0], "predicted_1": cm[1, 1]},
+    }
+
+metrics = [
+    calculate_metrics(grid_search.best_estimator_, x_train, y_train, "train"),
+    calculate_metrics(grid_search.best_estimator_, x_test, y_test, "test"),
+    calculate_confusion_matrix(grid_search.best_estimator_, x_train, y_train, "train"),
+    calculate_confusion_matrix(grid_search.best_estimator_, x_test, y_test, "test"),
+]
+
+
+with gzip.open("files/models/model.pkl.gz", "rb") as file:
+    loaded_model = pickle.load(file)
+print(type(loaded_model))
+for m in metrics:
+    print(m)
+
+
+# Convertir a tipos JSON-serializables
+def convert_to_serializable(obj):
+    if isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    else:
+        raise TypeError(f"Type {type(obj)} not serializable")
+
+output_path = "files/output/metrics.json"
+os.makedirs(os.path.dirname(output_path), exist_ok=True)
+with open(output_path, "w") as f:
+    for metric in metrics:
+        json_line = json.dumps(metric, default=convert_to_serializable)
+        f.write(json_line + "\n")
+
+
+model_path = "files/models/model.pkl.gz"
+try:
+    with gzip.open(model_path, "rb") as file:
+        model = pickle.load(file)
+    print("Modelo cargado correctamente:", model)
+except Exception as e:
+    print("Error al cargar el modelo:", e)

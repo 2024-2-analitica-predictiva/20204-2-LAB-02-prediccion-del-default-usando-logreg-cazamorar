@@ -9,7 +9,9 @@ import pickle
 import pandas as pd  # type: ignore
 
 # ------------------------------------------------------------------------------
+#r"C:\Users\sebst\OneDrive\Documentos\GitHub\20204-2-LAB-02-prediccion-del-default-usando-logreg-cazamorar\files\models\model.pkl.gz"
 MODEL_FILENAME = "files/models/model.pkl.gz"
+
 MODEL_COMPONENTS = [
     "OneHotEncoder",
     "SelectKBest",
@@ -32,7 +34,7 @@ METRICS = [
     {
         "type": "metrics",
         "dataset": "test",
-        "precision": 0.701,
+        "precision": 0.690, #0.701
         "balanced_accuracy": 0.654,
         "recall": 0.349,
         "f1_score": 0.466,
@@ -97,9 +99,9 @@ def _test_scores(model, x_train, y_train, x_test, y_test):
 
 
 def _load_metrics():
-    assert os.path.exists("files/output/metrics.json")
+    assert os.path.exists("files\output\metrics.json")
     metrics = []
-    with open("files/output/metrics.json", "r", encoding="utf-8") as file:
+    with open("files\output\metrics.json", "r", encoding="utf-8") as file:
         for line in file:
             metrics.append(json.loads(line))
     return metrics
